@@ -6,7 +6,8 @@ Created on Tue Feb 11 13:28:56 2025
 """
 
 import numpy as np
-from ionospheric_attenuation_public import P_ion, S_ion, D_ion, epsilon_transformed_ion, run_model_ion
+from ionospheric_attenuation import P_ion, S_ion, D_ion, epsilon_transformed_ion, run_model_ion
+from collisions import electron_neutral_collision_frequency, electron_neutral_collision_frequency_new, ion_neutral_collision_frequency
 
 e=1.602e-19
 m_e=9.109e-31
@@ -27,9 +28,17 @@ def neutral_density(alts):
     H2 = -180/ np.log(2e-3) 
     ns2 = 2e9* np.exp(-(alts-120)/H2)
     return ns1+ns2
-def electron_neutral_collision_frequency(n,Te):
+def neutral_density_distinguished(alts): #v m-3
+    H1 = -100/np.log(0.5e-5)
+    ns1 = 2e18 * np.exp(-(alts-100)/H1)
+    H2 = -180/ np.log(2e-3) 
+    ns2 = 2e15* np.exp(-(alts-120)/H2)
+    return np.transpose(np.vstack((ns1,ns2)))
+def electron_neutral_collision_frequency_old(n,Te):
     return 2.12*10**(-10)*n*np.sqrt(Te)
-def ion_neutral_collision_frequency(n,M):
+def electron_neutral_collision_frequency_co2(n,Te):
+    return 3.68*10**(-8)*n*(1+4.1*10**(-11)*abs(4500-Te)**2.93)
+def ion_neutral_collision_frequency_old(n,M):
     return 2.6*10**(-9)*n*M**(-1/2)
 def electron_ion_collision_frequency(n, Te):
     lmbd=1.23e4*Te**(3/2)*n**(-1/2)
@@ -38,28 +47,40 @@ def electron_ion_collision_frequency(n, Te):
 profile_alts=np.linspace(0,350,351)
 
 #night time
-# H=30
-# nm=5000
-# zm=150
+H=30
+#nm=5000
+nm=1000
+zm=150
 
 #daytime
-SZA_dg=0
-SZA=SZA_dg/180*np.pi
-H=12+3.4*np.log(1/np.cos(SZA))
-nm=160000*np.sqrt(np.cos(SZA))
-zm=125+H*np.log(1/np.cos(SZA))
+# SZA_dg=75
+# SZA=SZA_dg/180*np.pi
+# H=12+3.4*np.log(1/np.cos(SZA))
+# nm=160000*np.sqrt(np.cos(SZA))
+# zm=125+H*np.log(1/np.cos(SZA))
 
-electron_density_profile=electron_density(profile_alts, H,nm,zm)
+#meteoric
+
+FWHM=10
+H2=FWHM/np.sqrt(8*np.log(2))
+nm2=13300
+zm2=92
+
+#electron_density_profile=electron_density(profile_alts, H,nm,zm)+nm2*np.exp(-(profile_alts-zm2)**2/2/H2**2)
+electron_density_profile=nm2*np.exp(-(profile_alts-zm2)**2/2/H2**2)
 
 T1 = 100
 T2 = 3000
 z0 = 200
 electron_temperature_profile=electron_temperature(profile_alts, T1,T2, z0, H)
+ion_temperature_profile=electron_temperature_profile
+neutral_temperature_profile=electron_temperature_profile
 
-neutral_density_profile=neutral_density(profile_alts)
+neutral_density_profile=neutral_density_distinguished(profile_alts)
+neutrals=np.array(['CO2','O2'])
 
-electron_collision_profile=electron_neutral_collision_frequency(neutral_density_profile, electron_temperature_profile)
-ion_collision_profile=ion_neutral_collision_frequency(neutral_density_profile,32)
+electron_collision_profile=electron_neutral_collision_frequency_new(neutral_density_profile,neutrals, electron_temperature_profile)
+ion_collision_profile=ion_neutral_collision_frequency(neutral_density_profile, 'O2+', neutrals, electron_temperature_profile, ion_temperature_profile, neutral_temperature_profile)
 
 'Full-wave starts here'
 m=[m_e, 32*m_p]
@@ -69,7 +90,7 @@ polar='P'
 f=200
 latitudes=np.linspace(-90,90,91) 
 longitudes=np.linspace(-180,180,181)
-with open('mars/mapa_200_SZA_0.csv', 'a') as output:
+with open('mars/mapa_200_night_only_meteoric10.csv', 'a') as output:
     for lat in latitudes:
         for lon in longitudes:
             mag=np.loadtxt('mars/magnetic_profiles_2/lat_'+str(int(lat))+'_lon_'+str(int(lon))+'.csv',delimiter=',')

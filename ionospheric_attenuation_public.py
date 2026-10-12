@@ -21,7 +21,6 @@ def cyclotron_freq(B,q,m):
 '''m, q, n, ny are arrays with each element representing one particle specie'''
 
 '''Stix parameters including electron-ions collisions'''
-#using the convention of wave field changing as exp(-i omega t+i kr) according to Letheinen et al. 2008, 2009
 def P_ion(B, m, q, n, ny, ei, ie, f):
     omega=2*np.pi*f
     lambdae=-complex(0,1)*omega+ny[0]+ei
@@ -69,11 +68,11 @@ def count_nz_ion(kx0,S,D_stix,P,epsilon):
 '''sorting of complex nz according to increasing imaginary part'''
 def sort_nz(roots):
     nz_sorted=np.sort_complex(roots)[::-1]
-    if nz_sorted[0].imag<nz_sorted[1].imag:
+    if abs(nz_sorted[0].imag)<abs(nz_sorted[1].imag):
         mem=nz_sorted[1]
         nz_sorted[1]=nz_sorted[0]
         nz_sorted[0]=mem
-    if nz_sorted[2].imag<nz_sorted[3].imag:
+    if abs(nz_sorted[2].imag)>abs(nz_sorted[3].imag):
         mem=nz_sorted[2]
         nz_sorted[2]=nz_sorted[3]
         nz_sorted[3]=mem            
@@ -84,31 +83,37 @@ def count_F(kx0, nz, epsilon):
     F=np.zeros([6,4], dtype=np.complex128)
     for j in range(4):
         a=np.array([[nz[j]**2,0,-nz[j]*kx0],[0,kx0**2+nz[j]**2,0],[-nz[j]*kx0,0,kx0**2]])-epsilon
-        values, vectors=np.linalg.eig(a)
+        values, vectors=np.linalg.eig(a) #původní řešení
         vectors=np.transpose(vectors)
         for i in range(len(values)):
             if i==np.argmin(abs(values)):
-                if vectors[i,0].real>(vectors[i,0]*complex(0,1)).real:
-                    F[0,j]=vectors[i,0]
-                    F[1,j]=vectors[i,1]
-                    F[2,j]=vectors[i,2]
-                    F[3,j]=-nz[j]*vectors[i,1]
-                    F[4,j]=nz[j]*vectors[i,0]-kx0*vectors[i,2]
-                    F[5,j]=kx0*vectors[i,1]
-                else:
-                    F[0,j]=vectors[i,0]*complex(0,1)
-                    F[1,j]=vectors[i,1]*complex(0,1)
-                    F[2,j]=vectors[i,2]*complex(0,1)
-                    F[3,j]=-nz[j]*vectors[i,1]*complex(0,1)
-                    F[4,j]=nz[j]*vectors[i,0]*complex(0,1)-kx0*vectors[i,2]*complex(0,1)
-                    F[5,j]=kx0*vectors[i,1]*complex(0,1)
+                sin=vectors[i,0].imag/np.sqrt(vectors[i,0].real**2+vectors[i,0].imag**2)
+                cos=vectors[i,0].real/np.sqrt(vectors[i,0].real**2+vectors[i,0].imag**2)
+                F[0,j]=vectors[i,0]*(cos-complex(0,1)*sin)
+                F[1,j]=vectors[i,1]*(cos-complex(0,1)*sin)
+                F[2,j]=vectors[i,2]*(cos-complex(0,1)*sin)
+                F[3,j]=-nz[j]*vectors[i,1]*(cos-complex(0,1)*sin)
+                F[4,j]=(nz[j]*vectors[i,0]-kx0*vectors[i,2])*(cos-complex(0,1)*sin)
+                F[5,j]=kx0*vectors[i,1]*(cos-complex(0,1)*sin)
+    if np.linalg.det(F_square(F))==0:
+        print(np.linalg.det(F_square(F)))
+        print(F_square(F))
+        print(epsilon)   
     return(F)
+
 def F_square(F):
     return np.array([F[0], F[1], F[3], F[4]])
 def count_Pu(k0,h,nz):
     return np.array([[np.exp(complex(0,1)*k0*nz[0]*h),0],[0,np.exp(complex(0,1)*k0*nz[1]*h)]])
 def count_Pd(k0,h,nz):
     return np.array([[np.exp(-complex(0,1)*k0*nz[2]*h),0],[0,np.exp(-complex(0,1)*k0*nz[3]*h)]])
+
+def F_iso2(kx0,epsilon):
+    epsilon_iso=epsilon[0,0]
+    nz_abs=np.sqrt(epsilon_iso-kx0**2)
+    nz=np.array([nz_abs, nz_abs, -nz_abs, -nz_abs])
+    F=np.array([[0, nz_abs/np.sqrt(epsilon_iso), 0, nz_abs/np.sqrt(epsilon_iso)],[1, 0, 1, 0],[0, -kx0/np.sqrt(epsilon_iso), 0, kx0/np.sqrt(epsilon_iso)],[-nz_abs, 0, nz_abs, 0],[0, np.sqrt(epsilon_iso), 0, -np.sqrt(epsilon_iso)],[kx0, 0, kx0, 0]])
+    return nz, F
 
 '''completion of the model'''
 def run_model_ion(kx0,k0, S,D, P, epsilon, h, polar):
@@ -124,35 +129,37 @@ def run_model_ion(kx0,k0, S,D, P, epsilon, h, polar):
     U=np.zeros([M,2,2], dtype=np.complex128)
     u=np.zeros([M+1,2], dtype=np.complex128)
     d=np.zeros([M+1,2], dtype=np.complex128)
-    #inicialization of incident wave polarisation
-    if polar=='R':
+    eps=np.finfo(np.complex128).eps*300
+    if polar=='P':
         u[0]=np.array([0,1])
-    elif polar=='L': 
+    elif polar=='S': 
         u[0]=np.array([1,0])
-    elif polar=='P':
-        u[0]=np.array([1,1])
-    elif polar=='S':
-        u[0]=np.array([1,-1])
+    elif polar=='R':
+        u[0]=np.array([1,-complex(0,1)])
+    elif polar=='L':
+        u[0]=np.array([1,complex(0,1)])
     for k in range(M):
-        nz_sorted[k]=sort_nz(count_nz_ion(kx0,S[k],D[k],P[k],epsilon[k]))
-        F[k]=count_F(kx0, nz_sorted[k], epsilon[k])
-        #polarisation check
-        if (F[k,1,0]/F[k,0,0]).imag >0:
-            mem=nz_sorted[k,0]
-            nz_sorted[k,0]=nz_sorted[k,1]
-            nz_sorted[k,1]=mem
-            for j in range(6):
-                mem=F[k,j,0]
-                F[k,j,0]=F[k,j,1]
-                F[k,j,1]=mem
-        if (F[k,1,3]/F[k,0,3]).imag >0:
-            mem=nz_sorted[k,2]
-            nz_sorted[k,2]=nz_sorted[k,3]
-            nz_sorted[k,3]=mem
-            for j in range(6):
-                mem=F[k,j,2]
-                F[k,j,2]=F[k,j,3]
-                F[k,j,3]=mem            
+        if np.max(abs(epsilon[k]-np.identity(3)*epsilon[k,0,0]))<eps:
+            nz_sorted[k], F[k]=F_iso2(kx0, epsilon[k])
+        else:
+            nz_sorted[k]=sort_nz(count_nz_ion(kx0,S[k],D[k],P[k],epsilon[k]))
+            F[k]=count_F(kx0, nz_sorted[k], epsilon[k])
+            if (F[k,1,0]/F[k,0,0]).imag >0:
+                mem=nz_sorted[k,0]
+                nz_sorted[k,0]=nz_sorted[k,1]
+                nz_sorted[k,1]=mem
+                for j in range(6):
+                    mem=F[k,j,0]
+                    F[k,j,0]=F[k,j,1]
+                    F[k,j,1]=mem
+            if (F[k,1,3]/F[k,0,3]).imag >0:
+                mem=nz_sorted[k,2]
+                nz_sorted[k,2]=nz_sorted[k,3]
+                nz_sorted[k,3]=mem
+                for j in range(6):
+                    mem=F[k,j,2]
+                    F[k,j,2]=F[k,j,3]
+                    F[k,j,3]=mem    
         F_sqr[k]=F_square(F[k])
         Pu[k]=count_Pu(k0,h[k],nz_sorted[k])
         Pd[k]=count_Pd(k0,h[k],nz_sorted[k])
@@ -166,8 +173,7 @@ def run_model_ion(kx0,k0, S,D, P, epsilon, h, polar):
         U[k]=np.matmul(Tu[k,:2,:2], Pu[k])+np.matmul(np.matmul(Tu[k,:2,2:],prvniu),np.matmul(np.linalg.inv(druhyu),Pu[k]))
     for k in range(1,M):
         u[k]=np.matmul(U[k-1],u[k-1])
-        for k in range(M):
-            d[k]=np.matmul(Ru[k], u[k])
+    for k in range(M):
+        d[k]=np.matmul(Ru[k], u[k])
     u[M]=np.matmul(Pu[M-1],u[M-1])
     return nz_sorted, u, d, F
-

@@ -20,7 +20,7 @@ for i in range(91):
     for j in range(180):
         area[i,j]=np.sin((2*i)/180*np.pi)*(1/90*np.pi)**2
 
-with open('mars/mapa_20_night.csv', 'r') as data:
+with open('mars/mapa_20_night_5000_meteoric10.csv', 'r') as data:
     for i in range(90):
         for j in range(181):
             line=data.readline().split(',')
@@ -41,13 +41,14 @@ better_map[:,0:90]=mapa[:,90:180]
 better_map[:,90:180]=mapa[:,0:90]
 
 
-plt.pcolormesh(longitudes, latitudes, better_map)
-plt.colorbar(label='attenuation [dB]')
-plt.xlabel('longitude [°]')
-plt.ylabel('latitude [°]')
-plt.show()
+plt.rcParams["figure.figsize"] = (3,2)
+plt.rcParams['figure.dpi'] = 300
+plt.tight_layout()
 
-plt.pcolormesh(longitudes, latitudes, np.where(better_map<100,better_map, np.nan))
+plt.pcolormesh(longitudes, latitudes, np.where(better_map<100,better_map, np.nan), vmin=0, vmax=100)
+#plt.title('200 Hz, only meteoric')
+plt.title('20 Hz, nighttime \n+ strong meteoric (5000 cm$^{-3}$)')
+#plt.title('20 Hz, SZA=0°')
 plt.colorbar(label='attenuation [dB]')
 plt.xlabel('longitude [°]')
 plt.ylabel('latitude [°]')
